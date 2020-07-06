@@ -4,20 +4,28 @@ import numpy as np
 # `pip install easydict` if you don't have it
 from easydict import EasyDict as edict
 
+HOME = os.environ["HOME"]
 __C = edict()
 # Consumers can get config by:
 #   from fast_rcnn_config import cfg
 cfg = __C
 
+__C.DATA = edict()
 __C.TRAIN = edict()
 __C.OPTIM = edict()
 __C.TEST = edict()
-__C.DATA = edict()
 __C.LOG = edict()
 __C.MODEL = edict()
 
+__C.DATA.batch_size = 64
+__C.DATA.cifar_root_dir = ""
+__C.DATA.cifar_meta_file = ""
+__C.DATA.cifar_train_reg_exp = ""
+__C.DATA.cifar_test_reg_exp = ""
+
 __C.TRAIN.total_epoch = 100
 __C.TRAIN.start_epoch = 1
+__C.TRAIN.fp16 = False
 
 __C.OPTIM.optimizer = "adam"
 __C.OPTIM.lr = 1e-4
@@ -37,6 +45,8 @@ __C.MODEL.save_dir = "../models"
 __C.MODEL.resume_net_path = ""
 __C.MODEL.resume_opt_path = ""
 __C.MODEL.resume = False
+__C.MODEL.h_dim = 1024
+__C.MODEL.z_dim = 64
 
 __C.debug = True
 __C.run_mode = "train"
@@ -45,6 +55,8 @@ __C.gpus = "0"
 __C.use_multi_gpu = False
 __C.is_cpu = False
 __C.cuda_id = 0
+__C.num_workers = 4
+__C.input_ch = 3
 
 def format_dict(cfg):
     ng_names = []

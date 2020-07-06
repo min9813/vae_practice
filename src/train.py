@@ -17,13 +17,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import scipy
+import lib.lossfunction.kl_div as kl_div
 import lib.utils.logger_config as logger_config
 import lib.utils.average_meter as average_meter
+import lib.utils.get_aug_and_trans as get_aug_and_trans
+import lib.dataset.cifar as cifar
 import lib.network as network
 from torch.optim import lr_scheduler
 from lib.utils.configuration import cfg as args
 from lib.utils.configuration import cfg_from_file, format_dict
-
+try:
+    from apex import amp
+except ImportError:
+    fp16 = False
 
 def fix_seed(seed=0):
     np.random.seed(seed)
@@ -89,6 +95,15 @@ def train():
         args.TRAIN.total_epoch = 500
         args.LOG.train_print_iter = 1
 
+    args.TRAIN.fp16 = args.TRIAN.fp16 and fp16
+
+    trans = get_aug_and_trans(mean=[0.5, 0.5, 0.5], std=[0.5,0.5,0.5])
+
+    trn_dataset = cifar.Cifar10("train", args, msglogger, trans)
+    train_loader = torch.utils.data.DataLoader(trn_dataset, batch_size=args.DATA.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
+
+    net = network.vae.VAE(args.input_ch, args.MODEL.h_dim, args.MODEL.z_dim)
+
     for key, value in vars(args).items():
         if isinstance(value, dict):
             for key2, value2 in value.items():
@@ -101,10 +116,17 @@ def train():
             net, args.MODEL.resume_net_path, logger=msglogger)
         args.TRAIN.start_epoch = start_epoch
 
+    if args.TRAIN.rec_loss == "mse":
+        rec_criterion = nn.MSELoss()
+    else:
+        raise NotImplementedError
+
+    kl_loss = kl_div.kl_div_normal
+    wrapper = network.wrapper.LossWrap(args, net, rec_criterion, kl_loss)
+
     if args.run_mode == "test":
         pass
     elif args.run_mode == "train":
-        
         if args.OPTIM.optimizer == "adam":
             optimizer = torch.optim.Adam(
                 net.parameters(), lr=args.OPTIM.lr, weight_decay=5e-4)
@@ -113,6 +135,11 @@ def train():
             ), lr=args.OPTIM.lr, nesterov=True, momentum=0.9, weight_decay=5e-4)
         else:
             raise NotImplementedError
+
+        if args.TRAIN.fp16:
+            opt_level = "O1"
+            wrapper, (optimizer) = amp.initialize(
+                [wrapper], [optimizer], opt_level=opt_level)
 
         if args.OPTIM.lr_scheduler == 'multi-step':
             milestones = args.OPTIM.lr_milestones
@@ -135,6 +162,8 @@ def train():
             msglogger.info(f"Load optimizer from {args.MODEL.resume_opt_path}")
             checkpoint = torch.load(args.MODEL.resume_opt_path)
             optimizer.load_state_dict(checkpoint["optimizer"])
+
+        
 
         args.lr = args.OPTIM.lr
 

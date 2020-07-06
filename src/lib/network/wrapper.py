@@ -4,15 +4,28 @@ import torch.nn.functional as F
 
 
 class LossWrap(torch.nn.Module):
-    def __init__(self, args, model, criterion):
+    def __init__(self, args, model, rec_loss, kl_loss):
         self.args = args
         super(LossWrap, self).__init__()
         self.model = model
-        self.criterion = criterion
+        self.rec_loss = rec_loss
+        self.kl_loss = kl_loss
 
-    def forward(self, input, label):
+    def forward(self, input, label=None):
         if self.args.multi_gpus:
-            input, label = input.cuda(), label.cuda()
+            if label is None:
+                input = input.cuda()
+            else:
+                input, label = input.cuda(), label.cuda()
         else:
-            input, label = input.to(
-                self.args.device), label.to(self.args.device)
+            if label is None:
+                input = input.to(self.args.device)
+            else:
+                input, label = input.to(
+                    self.args.device), label.to(self.args.device)
+
+        x_hat, mean, log_var = self.model(input)
+        kl_loss = self.kl_loss(mean, log_var)
+        mse_loss = self.rec_loss(input, x_hat)
+
+        return kl_loss, mse_loss
