@@ -80,7 +80,6 @@ def save_model(wrapper, optimizer, score, is_best, epoch, logger=None, multi_gpu
         # 'amp': amp.state_dict()
     }
 
-    dsfajkdfsa
     if fp16 and is_amp:
         save_dict["amp"] = amp.state_dict()
     # if args.fp16_train:
