@@ -18,11 +18,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import scipy
 import lib.lossfunction.kl_div as kl_div
+import lib.lossfunction.mseloss as mseloss
 import lib.utils.logger_config as logger_config
 import lib.utils.average_meter as average_meter
 import lib.utils.get_aug_and_trans as get_aug_and_trans
 import lib.dataset.cifar as cifar
 import lib.network as network
+import lib.utils.epoch_func as epoch_func
 from torch.optim import lr_scheduler
 from lib.utils.configuration import cfg as args
 from lib.utils.configuration import cfg_from_file, format_dict
@@ -30,6 +32,7 @@ try:
     from apex import amp
 except ImportError:
     fp16 = False
+
 
 def fix_seed(seed=0):
     np.random.seed(seed)
@@ -49,6 +52,7 @@ def train():
         cfg_from_file(cfg_file)
     else:
         cfg_file = "default"
+        print("!!!!! No specified configfile, so use default config !!!!!")
 
     if len(args.gpus.split(',')) > 1 and args.use_multi_gpu:
         multi_gpus = True
@@ -80,6 +84,7 @@ def train():
     args.exp_type = parent
 
     args.model_save_dir = f"{args.LOG.save_dir}/{args.exp_type}/{args.exp_version}"
+    args.image_save_dir = f"{args.LOG.save_image_dir}/{args.exp_type}/{args.exp_version}"
 
     msglogger = logger_config.config_pylogger(
         './config/logging.conf', args.exp_version, output_dir="{}/{}".format(args.LOG.save_dir, parent))
@@ -95,14 +100,25 @@ def train():
         args.TRAIN.total_epoch = 500
         args.LOG.train_print_iter = 1
 
-    args.TRAIN.fp16 = args.TRIAN.fp16 and fp16
+    args.TRAIN.fp16 = args.TRAIN.fp16 and fp16
 
-    trans = get_aug_and_trans(mean=[0.5, 0.5, 0.5], std=[0.5,0.5,0.5])
+    trans = get_aug_and_trans.get_aug_trans(None, None, None, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
     trn_dataset = cifar.Cifar10("train", args, msglogger, trans)
-    train_loader = torch.utils.data.DataLoader(trn_dataset, batch_size=args.DATA.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
+    train_loader = torch.utils.data.DataLoader(
+        trn_dataset, batch_size=args.DATA.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
+
+    # for idx, data in enumerate(train_loader):
+    #     continue
+    # dslafjk
+
+    test_dataset = cifar.Cifar10("test", args, msglogger, trans)
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=args.DATA.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=False)
 
     net = network.vae.VAE(args.input_ch, args.MODEL.h_dim, args.MODEL.z_dim)
+
+    msglogger.info(net)
 
     for key, value in vars(args).items():
         if isinstance(value, dict):
@@ -117,12 +133,14 @@ def train():
         args.TRAIN.start_epoch = start_epoch
 
     if args.TRAIN.rec_loss == "mse":
-        rec_criterion = nn.MSELoss()
+        # rec_criterion = nn.MSELoss(reduction="batchmean")
+        rec_criterion = mseloss.mseloss
     else:
         raise NotImplementedError
 
     kl_loss = kl_div.kl_div_normal
     wrapper = network.wrapper.LossWrap(args, net, rec_criterion, kl_loss)
+    wrapper = wrapper.cuda()
 
     if args.run_mode == "test":
         pass
@@ -163,19 +181,48 @@ def train():
             checkpoint = torch.load(args.MODEL.resume_opt_path)
             optimizer.load_state_dict(checkpoint["optimizer"])
 
-        
-
         args.lr = args.OPTIM.lr
+        best_score = np.inf
+        best_iter = -1
+        for epoch in range(args.TRAIN.start_epoch, args.TRAIN.total_epoch+1):
+            train_info = epoch_func.train_epoch(
+                wrapper, train_loader, optimizer, epoch, args, logger=trn_logger)
+            trn_msg = "TRAIN: "
+            key_list = sorted(list(train_info.keys()))
+            for key in key_list:
+                value = train_info[key]
+                trn_msg += "{}:{:.4f} ".format(key, value)
+            val_info = epoch_func.valid_epoch(
+                wrapper, test_loader, epoch, args, logger=val_logger)
+            val_msg = "Epoch[{}/{}] lr={} VALID: ".format(
+                epoch, args.TRAIN.total_epoch+1, args.lr)
+            key_list = sorted(list(val_info.keys()))
+            for key in key_list:
+                value = val_info[key]
+                val_msg += "{}:{:.4f} ".format(key, value)
+            msglogger.info(val_msg)
+            msglogger.info(trn_msg)
+            is_best = best_score > val_info["loss_total"]
+            if is_best:
+                best_score = val_info["loss_total"]
+                best_iter = epoch
+            network.model_io.save_model(wrapper, optimizer, val_info["loss_total"], is_best, epoch,
+                                        logger=msglogger, multi_gpus=args.multi_gpus,
+                                        model_save_dir=args.model_save_dir, delete_old=args.MODEL.delete_old,
+                                        fp16=args.TRAIN.fp16)
 
-        for epoch in range(args.TRAIN.start_eopch, args.TRAIN.total_epoch+1):
-            pass
+            if args.debug:
+                if epoch >= 2:
+                    break
 
-            """
-            add  
-            network.model_io.save_model(wrapper, optimizer, score, is_best, epoch, 
-                                        logger=msglogger, multi_gpus=args.multi_gpus, 
-                                        model_save_dir=args.model_save_dir, delete_old=args.delete_old)
-            """            
+        msglogger.info("Best Iter = {} loss={:.4f}".format(
+            best_iter, best_score))
+        """
+        add  
+        network.model_io.save_model(wrapper, optimizer, score, is_best, epoch, 
+                                    logger=msglogger, multi_gpus=args.multi_gpus, 
+                                    model_save_dir=args.model_save_dir, delete_old=args.delete_old)
+        """
 
 
 if __name__ == "__main__":

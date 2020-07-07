@@ -6,38 +6,52 @@ import torch.nn.functional as F
 
 class ConvBlock(nn.Module):
 
-    def __init__(self, input_ch, output_ch, kernel_size=3, stride=1, padding=1, act="relu"):
+    def __init__(self, input_ch, output_ch, kernel_size=3, stride=1, padding=1, act="relu", bn=True):
         assert act in ("relu", "sigmoid")
         super(ConvBlock, self).__init__()
         self.conv = nn.Conv2d(
             input_ch, output_ch, kernel_size=kernel_size, stride=stride, padding=padding)
-        self.bn = nn.BatchNorm2d(output_ch)
+        if bn:
+            self.bn = nn.BatchNorm2d(output_ch)
+        else:
+            self.bn = None
         if act == "relu":
             self.act = nn.ReLU()
         elif act == "sigmoid":
             self.act = nn.Sigmoid()
 
     def forward(self, x):
-        h = self.bn(self.conv(x))
+        h = self.conv(x)
+        if self.bn is not None:
+            h = self.bn(h)
         h = self.act(h)
         return h
 
 
 class ConvTransposeBlock(nn.Module):
 
-    def __init__(self, input_ch, output_ch, kernel_size=3, stride=1, padding=1, act="relu"):
-        assert act in ("relu", "sigmoid")
+    def __init__(self, input_ch, output_ch, kernel_size=3, stride=1, padding=1, act="relu", bn=True):
+        assert act in ("relu", "sigmoid", "tanh")
         super(ConvTransposeBlock, self).__init__()
         self.conv = nn.ConvTranspose2d(
             input_ch, output_ch, kernel_size=kernel_size, stride=stride, padding=padding)
-        self.bn = nn.BatchNorm2d(output_ch)
+        if bn:
+            self.bn = nn.BatchNorm2d(output_ch)
+        else:
+            self.bn = None
         if act == "relu":
             self.act = nn.ReLU()
         elif act == "sigmoid":
             self.act = nn.Sigmoid()
+        elif act == "tanh":
+            self.act = nn.Tanh()
+        else:
+            raise NotImplementedError
 
     def forward(self, x):
-        h = self.bn(self.conv(x))
+        h = self.conv(x)
+        if self.bn is not None:
+            h = self.bn(h)
         h = self.act(h)
         return h
 
@@ -58,10 +72,10 @@ class Encoder(nn.Module):
 
         super(Encoder, self).__init__()
         self.models = nn.Sequential(
-            ConvBlock(input_ch, 32, 4, 2, 1),
-            ConvBlock(32, 64, 4, 2, 1),
-            ConvBlock(64, 128, 4, 2, 1),
-            ConvBlock(128, 256, 4, 2, 1)
+            ConvBlock(input_ch, 32, 4, 2, 1, bn=True),
+            ConvBlock(32, 64, 4, 2, 1, bn=True),
+            ConvBlock(64, 128, 4, 2, 1, bn=True),
+            ConvBlock(128, 256, 4, 2, 1, bn=True)
         )
         # self.conv1 = ConvBlock(input_ch, 32, 4, 2, 1)
         # self.conv2 = ConvBlock(32, 64, 4, 2, 1)
@@ -91,10 +105,10 @@ class Decoder(nn.Module):
         self.unflatten = UnFlatten()
 
         self.models = nn.Sequential(
-            ConvTransposeBlock(256, 128, 4, 2, 1),
-            ConvTransposeBlock(128, 64, 4, 2, 1),
-            ConvTransposeBlock(64, 32, 4, 2, 1),
-            ConvTransposeBlock(32, output_ch, 4, 2, 1, act="sigmoid")
+            ConvTransposeBlock(256, 128, 4, 2, 1, bn=True),
+            ConvTransposeBlock(128, 64, 4, 2, 1, bn=True),
+            ConvTransposeBlock(64, 32, 4, 2, 1, bn=True),
+            ConvTransposeBlock(32, output_ch, 4, 2, 1, act="tanh", bn=True)
         )
 
     def forward(self, z):
@@ -117,7 +131,7 @@ class VAE(nn.Module):
     def forward(self, x):
         mean_v, log_sigma_v = self.encoder(x)
         std_v = log_sigma_v.mul(0.5).exp_() # std = sqrt(var) <=> log std = 1/2 * log var 
-        randn = self.genereate_random(mean_v.shape, x.dtype)
+        randn = self.genereate_random(mean_v.shape, x.dtype, x.device)
         
         z = randn * std_v + mean_v
 
@@ -125,8 +139,8 @@ class VAE(nn.Module):
 
         return z, mean_v, log_sigma_v
 
-    def genereate_random(self, size, dtype):
-        return torch.randn(size, dtype=dtype)
+    def genereate_random(self, size, dtype, device=torch.device("cuda")):
+        return torch.randn(size, dtype=dtype, device=device)
 
 
 if __name__ == "__main__":

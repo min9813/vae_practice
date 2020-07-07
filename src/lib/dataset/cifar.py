@@ -42,10 +42,10 @@ class Cifar10(data.Dataset):
 
         if self.split == "train":
             path_list = pathlib.Path(self.args.DATA.cifar_root_dir).glob(
-                self.args.DATA.train_reg_exp)
+                self.args.DATA.cifar_train_reg_exp)
         else:
             path_list = pathlib.Path(self.args.DATA.cifar_root_dir).glob(
-                self.args.DATA.test_reg_exp)
+                self.args.DATA.cifar_test_reg_exp)
 
         all_data = []
         all_labels = []
@@ -66,7 +66,7 @@ class Cifar10(data.Dataset):
             all_data.append(images)
             all_labels.append(this_batch["labels"])
         all_data = np.concatenate(all_data, axis=0)
-        all_labels = np.concatenate(all_data, axis=0)
+        all_labels = np.concatenate(all_labels, axis=0)
 
         cifar_data = {
             "data": all_data,
@@ -86,6 +86,7 @@ class Cifar10(data.Dataset):
         if self.trans is not None:
             data = self.trans(data)
 
+        # print(self.dataset["meta_data"], label)
         data = {"data": data, "label": label,
                 "label_name": self.dataset["meta_data"]["label_names"][label]}
 

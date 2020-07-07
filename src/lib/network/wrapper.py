@@ -25,6 +25,8 @@ class LossWrap(torch.nn.Module):
                     self.args.device), label.to(self.args.device)
 
         x_hat, mean, log_var = self.model(input)
+        # print(x_hat.min(), x_hat.max())
+        # skjdhf
         kl_loss = self.kl_loss(mean, log_var)
         mse_loss = self.rec_loss(input, x_hat)
 

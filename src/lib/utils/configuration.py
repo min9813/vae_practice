@@ -25,6 +25,7 @@ __C.DATA.cifar_test_reg_exp = ""
 
 __C.TRAIN.total_epoch = 100
 __C.TRAIN.start_epoch = 1
+__C.TRAIN.rec_loss = "mse"
 __C.TRAIN.fp16 = False
 
 __C.OPTIM.optimizer = "adam"
@@ -39,9 +40,12 @@ __C.OPTIM.lr_cooldown = 1
 __C.OPTIM.lr_tmax = 1
 
 __C.LOG.save_dir = "../logs"
+__C.LOG.save_image_dir = "../result/images"
 __C.LOG.train_print_iter = 200
+__C.LOG.train_print = True
 
 __C.MODEL.save_dir = "../models"
+__C.MODEL.delete_old = True
 __C.MODEL.resume_net_path = ""
 __C.MODEL.resume_opt_path = ""
 __C.MODEL.resume = False

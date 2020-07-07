@@ -42,7 +42,7 @@ def load_model(net, path, logger=None):
     return net, epoch+1
 
 
-def save_model(wrapper, optimizer, score, is_best, epoch, logger=None, multi_gpus=False, model_save_dir="../models", delete_old=False, is_amp=False):
+def save_model(wrapper, optimizer, score, is_best, epoch, logger=None, multi_gpus=False, model_save_dir="../models", delete_old=False, is_amp=False, fp16=False):
     if logger is None:
         print_ = print
     else:
